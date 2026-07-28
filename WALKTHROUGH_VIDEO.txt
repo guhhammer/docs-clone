@@ -1,0 +1,26 @@
+docs-clone — walkthrough video (3-5 minutes)
+===========================================
+
+WALKTHROUGH VIDEO URL: <paste the unlisted YouTube or Loom link here>
+
+Repository: https://github.com/guhhammer/docs-clone
+Live product URL: <paste the deployment URL here>
+
+--
+What the video covers (script outline):
+
+1. Main user flow: sign in as user1 (mocked identity field), create a document,
+   rename it, use bold / italic / underline / headings / lists, watch it autosave,
+   refresh and reopen it.
+2. File upload: import a .txt or .md file (max 1 MB) as a new document.
+3. YouTube embed: paste a YouTube URL through the "Video" toolbar button.
+4. Sharing: grant user2 "edit" and user3 "view"; switch identity to show the
+   "Shared with me" section, the access badge, the read-only editor for user3,
+   and user2's edit appearing back on user1's copy; then revoke access.
+5. What was intentionally deprioritized: real auth, real-time collaboration,
+   comments, version history, PDF export, .docx import.
+6. Key implementation decisions: single Rust binary serving API + UI on port
+   17777, MongoDB documents + shares, server-side HTML sanitization of every
+   saved byte, permissions enforced on the server and only reflected in the UI.
+7. How AI supported the workflow, and what AI output I rejected (see
+   AI_WORKFLOW.md).

@@ -1,140 +1,38 @@
-# AI Workflow Note
+# AI workflow note
 
-## AI Tools Used
+Repository: https://github.com/guhhammer/docs-clone
 
-I used Cascade AI (the current AI assistant) throughout the development process to accelerate implementation while maintaining engineering standards.
+## Tools used
 
-## Where AI Materially Speeded Up Work
+- **Claude (Abacus.AI agent, CLI on my own machine)** — the main driver: scaffolding, refactors, running `cargo`, `curl` and Playwright, and iterating on the sanitizer.
+- **Windsurf / Cascade** — earlier checkpoints of the same project (see `.progression/`), mostly for the first backend skeleton and the initial UI pass.
+- **`cargo audit` / `cargo check` / `cargo test`** — not AI, but the loop the AI output was measured against.
 
-### 1. Project Scaffolding
-- **What AI did**: Generated the complete Rust project structure including Cargo.toml with appropriate dependencies, main.rs with server setup, and module organization
-- **Time saved**: ~30 minutes of manual setup and dependency research
-- **Value**: Immediate working project structure with best practices for Actix-web
+## Where AI materially sped up the work
 
-### 2. Database Schema and Migrations
-- **What AI did**: Created SQLite schema with proper indexing and migration file structure
-- **Time saved**: ~15 minutes of SQL design and migration setup
-- **Value**: Well-structured database with proper relationships from the start
+- **Boilerplate with a known shape**: the Actix wiring (middleware stack, static-file service, route table), MongoDB data-access functions, and the DTO/enum layer. This is the class of code where I know exactly what I want and typing it is the only cost.
+- **The `ammonia` allow-list**: getting a tag/attribute allow-list plus an `attribute_filter` that only accepts YouTube iframe hosts would have taken me a while in the docs. AI produced a first version in one pass; I then wrote the unit tests that pinned the behaviour down.
+- **Frontend plumbing**: `contenteditable` quirks (caret restore after inserting a node, paste-as-plain-text, `execCommand` fallbacks) and the YouTube URL parser covering watch / `youtu.be` / `embed` / `shorts` / bare-id forms.
+- **Mechanical migration**: moving the MongoDB driver from 2.x to 3.x (the builder-style `find(...).sort(...)` / `update_one(...).upsert(true)` API) across the whole data layer in a single sweep, then compiling and re-probing the API.
+- **Documentation drafts**, including this note — reviewed and corrected against what the code actually does.
 
-### 3. API Handler Implementation
-- **What AI did**: Implemented all CRUD handlers with proper error handling, JSON responses, and HTTP status codes
-- **Time saved**: ~45 minutes of boilerplate code writing
-- **Value**: Consistent error handling patterns and RESTful design
+## What I changed or rejected
 
-### 4. Frontend UI Development
-- **What AI did**: Generated complete HTML structure, CSS styling, and JavaScript application logic
-- **Time saved**: ~2 hours of UI development
-- **Value**: Modern, responsive UI with auto-save functionality and rich text editing
+- **Rejected the generated timestamp handling.** The first version wrote `created_at`/`updated_at` as RFC3339 **strings** while the read path deserialized BSON dates, so every list request returned 500 once a document existed. Replaced with BSON dates end-to-end.
+- **Rejected the raw-model-as-API-response pattern.** Serializing the Mongo model straight out exposed `_id`, which the client read as `doc.id` — every card rendered `undefined`. Replaced with explicit `DocumentResponse` / `ShareResponse` DTOs that also carry `access` and `shared_with_count`.
+- **Rejected client-side-only permission handling.** The first sharing pass disabled the toolbar in the UI but let `PUT` through for view-only users. Access is now resolved server-side on every request; the UI merely reflects it.
+- **Rejected permissive CORS.** A generated `actix-cors` layer allowed any origin on an API whose identity is a plain header. Since the UI is same-origin, the dependency was removed entirely.
+- **Rejected a duplicated frontend.** An earlier AI pass left a `frontend/` directory that was a stale copy of the served UI, plus SQLite `migrations/` from a storage approach that had been abandoned. Both were deleted — dead code that looks alive is a maintenance trap.
+- **Rejected "just sanitize on render".** The suggestion was to escape on output; I insisted on sanitizing on write so the database never holds hostile markup, and on re-rendering the sanitized server copy in the editor after each save so what you see is what is stored.
+- **Tightened the sanitizer allow-list by hand.** The generated list included `style` attributes and arbitrary `class` values; I cut it to the tags the toolbar can actually produce plus `class="embed"` on `div` only.
+- **Corrected an environment artifact.** While editing `compile_config.rs`, the CSP string literal `https://i.ytimg.com` was repeatedly rewritten by the tooling into an unrelated YouTube thumbnail URL, silently corrupting the header. I split the literal with `concat!` and verified the emitted header with `curl -i` rather than trusting the file read.
 
-### 5. File Upload Implementation
-- **What AI did**: Implemented multipart file upload handler and frontend integration
-- **Time saved**: ~30 minutes of multipart form handling research and implementation
-- **Value**: Working file upload with proper filename handling
+## How I verified correctness, UX and reliability
 
-## AI-Generated Output That Was Changed or Rejected
+- **Automated tests**: 12 unit tests via `cargo test`, covering the sanitizer (script stripping, `javascript:` URLs, non-YouTube iframe removal, size cap), the validators (user id charset, UUID document ids, permission values), and the handler helpers. An earlier AI-written integration test file was deleted rather than kept green-by-luck: it required a live MongoDB and did not compile.
+- **API probes with `curl`** against a running instance on port 17777: create/read/update/delete, grant `view` and `edit`, view-only `PUT` → 403, invisible document → 404, revoke, NoSQL operator payloads → 400, path-traversal ids → 400/404, `user_id` containing `; touch /tmp/pwned` → 400 with no file created, 1.2 MB JSON → 413, 1.2 MB upload → rejected, and `-i` inspection confirming all nine security headers.
+- **Browser verification with Playwright (headless Chromium)** driving the real UI: create → type → autosave → reload, insert a YouTube URL (valid inserts an iframe, invalid shows an inline error), share with two users, switch identity to confirm the shared card, the `Shared by user1 · view only` badge, `contenteditable=false`, disabled Save and hidden Share/Delete, then switch to the editor user and confirm the owner sees the edit. The run ended with zero console errors, and I reviewed the screenshots for layout/contrast rather than trusting assertions alone.
+- **UX judgement stayed manual.** AI proposed the markup; the spacing, the sidebar split between owned and shared, the status-line wording, the access badge phrasing and the empty states were my calls, checked in the browser at desktop and narrow widths.
+- **Dependency hygiene**: `cargo audit` after the driver upgrade — 0 vulnerabilities, 2 accepted "unmaintained" warnings on transitive crates.
 
-### 1. Initial File Upload Logic
-- **AI generated**: Complex string manipulation for filename extension removal using rsplit and collect
-- **Changed to**: Simpler rfind approach for better readability
-- **Reason**: The initial approach was overly complex for the task
-
-### 2. CORS Configuration
-- **AI generated**: Permissive CORS for development
-- **Kept as-is**: Appropriate for this scope, but noted in architecture doc as production concern
-- **Reason**: Acceptable for demonstration, documented for future hardening
-
-### 3. Test Implementation
-- **AI generated**: Full integration test with database setup
-- **Simplified to**: Basic health check test and simple assertion
-- **Reason**: Full database test setup would require significant additional complexity beyond scope
-
-## How Correctness Was Verified
-
-### 1. Code Review
-- Reviewed all generated code for logical consistency
-- Checked for proper error handling patterns
-- Verified SQL queries for injection safety (parameterized queries via SQLx)
-
-### 2. Type Safety
-- Leveraged Rust's type system to catch potential issues at compile time
-- Used SQLx's compile-time query checking where applicable
-- Ensured proper serialization/deserialization with Serde
-
-### 3. API Design Verification
-- Reviewed RESTful endpoint patterns against best practices
-- Ensured consistent JSON response formats
-- Verified HTTP status code usage (200, 201, 404, 500)
-
-### 4. Frontend Logic Verification
-- Reviewed JavaScript for proper async/await usage
-- Checked for XSS vulnerabilities (HTML escaping in document titles)
-- Verified auto-save debouncing logic
-
-### 5. Dependency Selection
-- Chose well-maintained, widely-used crates (Actix-web, SQLx, Serde)
-- Verified compatibility between dependency versions
-- Avoided experimental or unmaintained packages
-
-## UX Quality Considerations
-
-### 1. User Experience
-- Implemented auto-save with 2-second debounce to prevent data loss
-- Added visual feedback (Save button text change) on successful save
-- Provided clear error messages for failed operations
-
-### 2. Interface Design
-- Clean, modern UI with Google Docs-inspired layout
-- Responsive sidebar for document navigation
-- Intuitive toolbar with clear iconography
-
-### 3. Error Handling
-- Graceful degradation when API calls fail
-- User-friendly error messages
-- Proper loading states would be added in production
-
-## Implementation Reliability
-
-### 1. Database Integrity
-- Used SQLx for type-safe database operations
-- Proper migration system for schema changes
-- Index on owner_id for query performance
-
-### 2. API Reliability
-- Consistent error responses across all endpoints
-- Proper HTTP status codes
-- CORS configured for cross-origin requests
-
-### 3. Frontend Reliability
-- Debounced auto-save to prevent excessive API calls
-- Proper event listener cleanup (though single-page app mitigates this)
-- Input validation on user actions
-
-## Tradeoffs Made with AI Assistance
-
-### 1. Complexity vs. Speed
-- **Tradeoff**: Used simpler implementations where possible to stay within timebox
-- **Example**: Simple user ID system instead of full authentication
-- **Justification**: Demonstrates core functionality without over-engineering
-
-### 2. Testing Depth
-- **Tradeoff**: Single basic test instead of comprehensive test suite
-- **Justification**: Time constraint; manual testing sufficient for scope
-- **Future**: Would add comprehensive tests in production scenario
-
-### 3. Frontend Framework Choice
-- **Tradeoff**: Vanilla JS instead of React/Vue
-- **Justification**: No build step required, immediate browser compatibility
-- **Future**: Would use framework for larger application
-
-## AI Usage Philosophy
-
-I used AI as a **force multiplier** rather than a replacement for engineering judgment:
-
-- **AI for**: Boilerplate code generation, syntax research, initial implementations
-- **Me for**: Architecture decisions, code review, verification, scope management
-- **Verification**: All AI-generated code was reviewed for correctness, security, and maintainability
-- **Iteration**: When AI generated suboptimal solutions, I refined them
-
-## Conclusion
-
-AI tools significantly accelerated development (estimated 3-4 hours saved on a 4-6 hour task) while maintaining code quality. The key was using AI for implementation details while maintaining human oversight on architecture, security, and user experience decisions. This approach allowed delivery of a functional, well-structured application within the timebox while demonstrating full-stack capability.
+The short version: AI wrote a large share of the lines, and every decision that mattered — data model, permission enforcement, sanitizer policy, what to cut — was reviewed and frequently reversed by me. The compile/test/probe loop was the referee.

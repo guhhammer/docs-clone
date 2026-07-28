@@ -55,13 +55,21 @@
                 </div>
 
                 <div class="sidebar__list-head">
-                    <h2 class="sidebar__title">Documents</h2>
-                    <span id="docCount" class="badge">0</span>
+                    <h2 class="sidebar__title">My documents</h2>
+                    <span id="ownedCount" class="badge">0</span>
                 </div>
 
-                <div id="documentList" class="document-list" role="list" aria-busy="true">
+                <div id="ownedList" class="document-list" role="list" aria-busy="true">
                     <div class="skeleton" aria-hidden="true"></div>
                     <div class="skeleton" aria-hidden="true"></div>
+                </div>
+
+                <div class="sidebar__list-head">
+                    <h2 class="sidebar__title">Shared with me</h2>
+                    <span id="sharedCount" class="badge">0</span>
+                </div>
+
+                <div id="sharedList" class="document-list" role="list" aria-busy="true">
                     <div class="skeleton" aria-hidden="true"></div>
                 </div>
             </aside>
@@ -72,7 +80,9 @@
                         <label class="sr-only" for="docTitle">Document title</label>
                         <input type="text" id="docTitle" class="doc-title" placeholder="Untitled document">
                         <div class="editor-head__actions">
+                            <span id="accessBadge" class="access-badge" hidden></span>
                             <span id="docMeta" class="doc-meta"></span>
+                            <button id="shareBtn" class="btn btn--ghost btn--sm" type="button">Share</button>
                             <button id="saveBtn" class="btn btn--primary btn--sm" type="button">Save</button>
                             <button id="deleteBtn" class="btn btn--danger btn--sm" type="button">Delete</button>
                             <button id="closeBtn" class="btn btn--ghost btn--sm" type="button">Close</button>
@@ -103,6 +113,10 @@
                         <div class="toolbar__divider" role="separator"></div>
                         <div class="toolbar__group">
                             <button class="tool" type="button" data-command="removeFormat" title="Clear formatting" aria-label="Clear formatting">⌫ Format</button>
+                        </div>
+                        <div class="toolbar__divider" role="separator"></div>
+                        <div class="toolbar__group">
+                            <button id="videoBtn" class="tool" type="button" title="Insert YouTube video" aria-label="Insert YouTube video">▶ Video</button>
                         </div>
                         <span id="wordCount" class="toolbar__meta" aria-live="polite"></span>
                     </div>
@@ -137,6 +151,50 @@
             <div class="dialog__actions">
                 <button id="dialogCancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
                 <button id="dialogConfirm" class="btn btn--primary btn--sm" type="button">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="shareBackdrop" class="dialog-backdrop" hidden>
+        <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+            <h2 id="shareTitle" class="dialog__title">Share document</h2>
+            <p class="dialog__message">
+                Grant another user access. Users are simulated by id — the person just needs
+                to enter the same id in the “Signed in as” field.
+            </p>
+            <form id="shareForm" class="share-form">
+                <label class="sr-only" for="shareUserId">User id</label>
+                <input type="text" id="shareUserId" class="input" placeholder="e.g. user2"
+                       autocomplete="off" required>
+                <label class="sr-only" for="sharePermission">Permission</label>
+                <select id="sharePermission" class="select">
+                    <option value="edit">Can edit</option>
+                    <option value="view">Can view</option>
+                </select>
+                <button class="btn btn--primary btn--sm" type="submit">Grant access</button>
+            </form>
+            <h3 class="dialog__subtitle">People with access</h3>
+            <ul id="shareList" class="share-list"></ul>
+            <div class="dialog__actions">
+                <button id="shareClose" class="btn btn--ghost btn--sm" type="button">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="videoBackdrop" class="dialog-backdrop" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="videoTitle">
+            <h2 id="videoTitle" class="dialog__title">Insert YouTube video</h2>
+            <p class="dialog__message">
+                Paste a YouTube link or video id. Only YouTube embeds are allowed —
+                anything else is rejected.
+            </p>
+            <label class="sr-only" for="videoUrl">YouTube URL or video id</label>
+            <input type="text" id="videoUrl" class="input"
+                   placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+            <p id="videoError" class="dialog__error" hidden></p>
+            <div class="dialog__actions">
+                <button id="videoCancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+                <button id="videoConfirm" class="btn btn--primary btn--sm" type="button">Insert video</button>
             </div>
         </div>
     </div>

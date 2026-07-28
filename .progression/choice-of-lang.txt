@@ -1,0 +1,6 @@
+
+
+Just a reminder. I use Rust because I like it more that other langs. But I familiar with
+at least 18 of them, and react.js is just a framework for those who know.
+Either way I can make the A.I. use any and solve their bugs too.
+

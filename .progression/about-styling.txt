@@ -1,0 +1,6 @@
+
+
+I usually opt for tailwind.css, but to quick this demo I will go with pure css.
+
+It serves the purpose.
+

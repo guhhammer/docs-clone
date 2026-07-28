@@ -1,132 +1,108 @@
-# Docs Clone
+# docs-clone
 
-A lightweight collaborative document editor inspired by Google Docs, built with Rust (Actix-web) backend and vanilla JavaScript frontend.
+A lightweight collaborative document editor (Google Docs–inspired) built with **Rust + Actix-web** on the backend, **MongoDB** for persistence, and a dependency-free **vanilla JS** rich-text frontend.
+
+Repository: https://github.com/guhhammer/docs-clone
+
+Everything (API, UI, static assets) is served by a single process on **port 17777**.
+
+---
 
 ## Features
 
-- **Document Creation and Editing**: Create, rename, and edit documents with rich text formatting
-- **Rich Text Editor**: Support for bold, italic, underline, headings, and lists
-- **File Upload**: Import .txt and .md files as new documents
-- **Persistence**: Documents are saved to MongoDB
-- **User Management**: Simple user ID system for document ownership
+- **Documents**: create, rename, edit, autosave, reopen, delete.
+- **Rich text**: bold, italic, underline, headings (H1/H2/normal), bulleted and numbered lists, undo/redo. Paste is forced to plain text so foreign markup never enters the document.
+- **YouTube embed**: `▶ Video` toolbar button accepts a YouTube URL (watch / `youtu.be` / `embed` / `shorts` / bare video id) and inserts a responsive privacy-mode (`youtube-nocookie.com`) iframe.
+- **File upload**: import a **`.txt` or `.md`** file (max **1 MB**) as a new document. Supported types are stated in the UI next to the upload button. Other extensions and non-UTF-8 files are rejected with a clear message.
+- **Sharing**: the creator is the owner; owners can grant another user `view` or `edit` access and revoke it. The sidebar separates **My documents** from **Shared with me**, shared cards carry a `SHARED` tag, owned cards show `shared with N`, and the editor shows an access badge (`Owner` / `Shared by X · can edit` / `Shared by X · view only`).
+- **Persistence**: MongoDB collections `documents` and `shares`, with indexes on `owner_id + updated_at`, a unique `document_id + user_id` share index, and `user_id`.
+- **Security**: every saved title and body is sanitized server-side (see [ARCHITECTURE.md](ARCHITECTURE.md#security-model)).
 
-## Tech Stack
+## Requirements
 
-- **Backend**: Rust with Actix-web framework
-- **Database**: MongoDB with mongodb driver
-- **Frontend**: Vanilla JavaScript with HTML5 contenteditable
-- **Styling**: CSS3
+- Rust (stable, 2021 edition) — `rustc`/`cargo`
+- MongoDB running locally (or any reachable MongoDB URL)
 
-## Prerequisites
-
-- Rust 1.70 or higher
-- Cargo (comes with Rust)
-- MongoDB (local or remote instance)
-
-## Setup Instructions
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd docs-clone
-   ```
-
-2. **Install dependencies**
-   ```bash
-   cargo build
-   ```
-
-3. **Configure MongoDB connection**
-   Edit `.env` file to set your MongoDB connection string:
-   ```
-   MONGODB_URL=mongodb://localhost:27017
-   ```
-   For remote MongoDB:
-   ```
-   MONGODB_URL=mongodb://username:password@your-server:27017
-   ```
-
-4. **Run the backend server**
-   ```bash
-   cargo run
-   ```
-   The server will start at `http://127.0.0.1:17777`
-
-5. **Open the frontend**
-   Open `frontend/index.html` in your web browser, or serve it with a simple HTTP server:
-   ```bash
-   cd frontend
-   python3 -m http.server 3000
-   ```
-   Then navigate to `http://localhost:3000`
-
-## Environment Variables
-
-- `MONGODB_URL`: MongoDB connection string (default: `mongodb://localhost:27017`)
-- `BIND_ADDRESS`: Server bind address (default: `127.0.0.1:17777`)
-- `RUST_LOG`: Logging level (default: `info`)
-
-## API Endpoints
-
-### Health Check
-- `GET /` - Health check endpoint
-
-### Documents
-- `GET /api/documents?owner_id={user_id}` - Get all documents for a user
-- `POST /api/documents` - Create a new document
-- `GET /api/documents/{id}` - Get a specific document
-- `PUT /api/documents/{id}` - Update a document
-- `DELETE /api/documents/{id}` - Delete a document
-- `POST /api/documents/upload?owner_id={user_id}` - Upload a file as a new document
-
-## Usage
-
-1. Enter a user ID in the top right corner (default: "user1")
-2. Click "+ New Document" to create a new document
-3. Click "📁 Upload File" to import a .txt or .md file
-4. Use the toolbar to format text (bold, italic, underline, headings, lists)
-5. Documents auto-save every 2 seconds, or click "Save" manually
-6. Click on documents in the sidebar to open them
-
-## Running Tests
+## Setup
 
 ```bash
-cargo test
+git clone https://github.com/guhhammer/docs-clone.git
+cd docs-clone
 ```
 
-## Project Structure
+Create a `.env` file in the project root:
 
-```
-docs-clone/
-├── src/
-│   ├── main.rs          # Application entry point
-│   ├── models.rs        # Data models
-│   ├── handlers.rs      # HTTP request handlers
-│   └── db.rs            # Database operations
-├── migrations/
-│   └── 001_initial.sql  # Database schema
-├── frontend/
-│   ├── index.html       # Main HTML file
-│   ├── styles.css       # Styling
-│   └── app.js           # Frontend logic
-├── tests/
-│   └── integration_test.rs
-└── Cargo.toml           # Rust dependencies
+```bash
+MONGODB_URL=mongodb://localhost:27017
+BIND_ADDRESS=127.0.0.1:17777
 ```
 
-## Limitations
+Both values have built-in defaults (`mongodb://localhost:27017` and `127.0.0.1:17777`), so `.env` is optional if you use those.
 
-- No real-time collaboration
-- No authentication system (uses simple user IDs)
-- No document versioning
-- No export functionality
-- File upload limited to .txt and .md files
+Start MongoDB, then run:
 
-## Future Enhancements
+```bash
+cargo run --release
+```
 
-- Real-time collaboration with WebSockets
-- User authentication and authorization
-- Document versioning and history
-- Export to PDF, Markdown, etc.
-- Advanced sharing permissions
-- Comments and suggestions mode
+Open <http://127.0.0.1:17777>.
+
+Health check: `curl http://127.0.0.1:17777/health` → `{"status":"ok"}`
+
+## Tests
+
+```bash
+cargo test          # 12 unit tests: sanitizer, validators, handler helpers
+cargo check         # type check
+cargo audit         # dependency CVE scan (clean as of the last run)
+```
+
+## Reviewing the sharing flow (mocked users)
+
+Authentication is intentionally **mocked**: the identity is whatever user id is typed into the **“Signed in as”** field at the top of the sidebar, sent to the API as an `X-User-Id` header. No passwords, no accounts to provision.
+
+Suggested walkthrough:
+
+1. Open the app, set the user field to `user1`, create a document and type some content.
+2. Click **Share**, grant `user2` → `edit`, grant `user3` → `view`.
+3. Change the user field to `user2`: the document appears under **Shared with me** and is editable.
+4. Change it to `user3`: the same document is read-only — the editor is not editable, the toolbar is disabled, and Save/Share/Delete are hidden.
+5. Back as `user1`, reopen the document to see `user2`'s edits, and use **Share** to revoke access.
+
+Any string of letters, digits, `.`, `_`, `-`, `@` (max 64 chars) works as a user id; ids are lowercased.
+
+## API
+
+All endpoints require the `X-User-Id` header (a `?user_id=` query parameter is accepted as a fallback).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | Editor UI |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/api/documents` | `{ "owned": [...], "shared": [...] }` |
+| `POST` | `/api/documents` | Create (`title`, `content`) |
+| `GET` | `/api/documents/{id}` | Fetch one (404 if not visible to the caller) |
+| `PUT` | `/api/documents/{id}` | Update title/content (403 for view-only) |
+| `DELETE` | `/api/documents/{id}` | Delete + cascade shares (owner only) |
+| `POST` | `/api/documents/upload` | Multipart `.txt`/`.md` import |
+| `GET` | `/api/documents/{id}/shares` | List shares (owner only) |
+| `POST` | `/api/documents/{id}/shares` | Grant/update access (owner only) |
+| `DELETE` | `/api/documents/{id}/shares/{user_id}` | Revoke (owner only) |
+
+## Project layout
+
+```
+src/
+  main.rs             HTTP server, middleware, routes
+  compile_config.rs   all tunables and security allow-lists in one place
+  security.rs         HTML sanitizer + input validators
+  handlers.rs         request handlers, identity + access checks
+  db.rs               MongoDB data access
+  models.rs           documents, shares, access levels, DTOs
+templates/index.html  UI shell
+static/               app.js, styles.css
+```
+
+## Deployment
+
+Not deployed yet. The binary is self-contained (single port, static files served in-process); see [LAST_THINGS_TODO.md](LAST_THINGS_TODO.md) for the remaining submission steps, and [WALKTHROUGH_VIDEO.txt](WALKTHROUGH_VIDEO.txt) for the video link.

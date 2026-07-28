@@ -7,3 +7,7 @@ Cargo.lock
 # DB
 migrations/**
 
+# Certs
+*.pem
+
+/links/

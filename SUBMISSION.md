@@ -1,122 +1,72 @@
-# Submission Contents
+# SUBMISSION
 
-This document lists exactly what is included in this submission.
+**Project:** docs-clone — a lightweight collaborative document editor (Rust + Actix-web + MongoDB + vanilla JS)
+**Author:** guhhammer
+**GitHub:** https://github.com/guhhammer/docs-clone
+**Live URL:** _not deployed yet — see `LAST_THINGS_TODO.md`_
+**Walkthrough video:** see `WALKTHROUGH_VIDEO.txt`
+**Google Drive folder:** _to be added when the folder is created — see `LAST_THINGS_TODO.md`_
 
-## Source Code
+---
 
-### Backend (Rust)
-- `Cargo.toml` - Rust project dependencies and configuration
-- `src/main.rs` - Application entry point and server setup
-- `src/models.rs` - Data models (Document, CreateDocumentRequest, UpdateDocumentRequest)
-- `src/handlers.rs` - HTTP request handlers for all API endpoints
-- `src/db.rs` - Database operations (CRUD for documents)
-- `migrations/001_initial.sql` - Database schema initialization
+## What is included
 
-### Frontend (Vanilla JavaScript)
-- `frontend/index.html` - Main HTML application structure
-- `frontend/styles.css` - UI styling and responsive design
-- `frontend/app.js` - Client-side application logic
+| Path | What it is |
+| --- | --- |
+| `README.md` | Local setup and run instructions, feature list, API reference, sharing-demo script |
+| `ARCHITECTURE.md` | Architecture note: priorities, tradeoffs, data model, security model, inspection findings |
+| `AI_WORKFLOW.md` | AI workflow note: tools used, where AI helped, what I rejected, how I verified |
+| `SUBMISSION.md` | This file |
+| `LAST_THINGS_TODO.md` | Remaining manual submission steps (deploy, video, Drive folder, screenshots) |
+| `WALKTHROUGH_VIDEO.txt` | Text file holding the walkthrough video URL |
+| `todo.txt` | The original assignment brief, kept for reference |
+| `Cargo.toml` / `Cargo.lock` | Rust manifest and pinned dependency graph |
+| `src/main.rs` | HTTP server: middleware stack, security headers, routes, port binding |
+| `src/compile_config.rs` | Every tunable and security allow-list in one place (paths, port, workers, timeouts, DB names, rate limits, headers, size caps, sanitizer allow-lists) |
+| `src/security.rs` | HTML sanitizer + input validators, with unit tests |
+| `src/handlers.rs` | Request handlers, mocked identity, access resolution, upload import, with unit tests |
+| `src/db.rs` | MongoDB data access and index creation |
+| `src/models.rs` | Documents, shares, `Access` levels, response DTOs |
+| `templates/index.html` | UI shell: sidebar, editor, share dialog, video dialog |
+| `static/app.js` | Editor logic: autosave, formatting, upload, sharing, YouTube embed |
+| `static/styles.css` | Styling, responsive layout |
+| `.progression/` | Checkpoint logs from earlier AI-assisted sessions |
 
-### Tests
-- `tests/integration_test.rs` - Basic integration test for health endpoint
+Everything runs as **one process on port 17777** (API, UI and static assets).
 
-## Documentation
+## Credentials / test accounts
 
-- `README.md` - Setup and run instructions, API documentation, usage guide
-- `ARCHITECTURE.md` - Architecture decisions, technology choices, system design
-- `AI_WORKFLOW.md` - AI tools used, verification methods, workflow notes
-- `SUBMISSION.md` - This file
+**None needed.** Authentication is intentionally mocked: type a user id into the **“Signed in as”** field in the sidebar and the client sends it as an `X-User-Id` header. Use `user1`, `user2` and `user3` to reproduce the sharing flow (full step-by-step script in `README.md` → *Reviewing the sharing flow*). Any id of letters, digits, `.`, `_`, `-`, `@` up to 64 characters works.
 
-## What Is Working
+## What is working (verified end to end)
 
-### Fully Functional
-- Document creation via UI
-- Document editing with rich text formatting (bold, italic, underline, headings, lists)
-- Document save and reopen functionality
-- Auto-save (2-second debounce)
-- File upload (.txt and .md files) creating new documents
-- Document persistence via SQLite database
-- Document listing filtered by user ID
-- Document deletion via API
-- Health check endpoint
+- Create, rename, edit, autosave (1.2 s idle), `Ctrl/Cmd+S`, reopen after refresh, delete.
+- Rich text: bold, italic, underline, H1/H2/normal, bulleted and numbered lists, undo/redo; paste is coerced to plain text.
+- YouTube embed via the `▶ Video` toolbar button (watch / `youtu.be` / `embed` / `shorts` / bare id → responsive `youtube-nocookie.com` iframe); invalid URLs show an inline error.
+- File upload: `.txt` and `.md`, max 1 MB, becomes a new editable document; unsupported extensions and non-UTF-8 files are rejected with a clear message. The limit is stated in the UI and in the README.
+- Sharing: owner grants `view` or `edit` to another user id and revokes it; sidebar separates **My documents** from **Shared with me**; owned cards show `shared with N`; the editor shows an access badge; view-only users get a read-only editor, a disabled toolbar, and no Save/Share/Delete. Permissions are enforced server-side (view-only `PUT` → 403, non-owner delete/share → 403, invisible document → 404).
+- Persistence: MongoDB `documents` + `shares` with indexes; formatting survives the browser → sanitizer → MongoDB → browser round trip.
+- Validation and error handling: typed request structs, validated ids/permissions, size caps (1 MiB JSON/upload, 512 KiB content, 200-char titles), rate limiting, generic error responses that do not leak internals.
+- Security: server-side HTML sanitization of all stored content, nine hardening headers, no shell/process/filesystem write path, `cargo audit` clean. Details and the full inspection table are in `ARCHITECTURE.md`.
+- Tests: `cargo test` → **12 unit tests pass**; `cargo check` clean; API probes with `curl` and a browser walkthrough with headless Playwright (zero console errors).
 
-### API Endpoints
-- `GET /` - Health check
-- `GET /api/documents?owner_id={user_id}` - List documents
-- `POST /api/documents` - Create document
-- `GET /api/documents/{id}` - Get document
-- `PUT /api/documents/{id}` - Update document
-- `DELETE /api/documents/{id}` - Delete document
-- `POST /api/documents/upload?owner_id={user_id}` - Upload file as document
+## What is incomplete
 
-## What Is Incomplete
+- **No live deployment yet.** The build is testable locally with `cargo run --release`; nothing is hosted at a public URL.
+- **No walkthrough video yet.** `WALKTHROUGH_VIDEO.txt` is a placeholder awaiting the link.
+- **No Google Drive folder assembled yet.**
+- **Auth is mocked.** `X-User-Id` is spoofable and is not a security boundary. Every access check is centralised, but there are no sessions, passwords or CSRF tokens.
+- **No screenshots / demo GIF committed.**
+- **Not real-time.** Two people editing the same document will overwrite each other on save (last write wins); there are no presence indicators.
+- **No comments, version history, PDF export, or `.docx` import.**
+- **Share targets are unvalidated identities** — you can share with a user id that nobody has ever used; it simply appears for whoever types that id.
+- Uploads are limited to plain text formats, and no attachment storage exists (imported files become documents, they are not kept as files).
+- Document lists are unpaginated.
 
-### Intentionally Deferred (Scope Management)
-- **Sharing functionality**: User model and sharing logic not implemented
-  - No document sharing between users
-  - No access control beyond simple owner_id
-  - No shared document visibility
+## What I would build next with another 2–4 hours
 
-### Not Implemented
-- **Real-time collaboration**: No WebSocket support for simultaneous editing
-- **Authentication**: Simple user ID system instead of full authentication
-- **Document versioning**: No history or version control
-- **Export functionality**: No PDF, Markdown, or other export options
-- **Comments/suggestions**: No commenting or suggestion modes
-- **Advanced permissions**: No role-based access control
-
-## What Would Be Built Next (With 2-4 More Hours)
-
-1. **Sharing Implementation** (1.5 hours)
-   - Add shared_documents table to database
-   - Implement sharing API endpoints
-   - Add sharing UI to frontend
-   - Display shared documents in sidebar
-
-2. **Authentication** (1 hour)
-   - Add simple login/signup flow
-   - Implement session management
-   - Protect API endpoints with authentication
-
-3. **Enhanced Testing** (0.5 hours)
-   - Add comprehensive API tests
-   - Add frontend unit tests
-   - Add integration tests for file upload
-
-4. **Export Functionality** (1 hour)
-   - Add Markdown export endpoint
-   - Add PDF export (using a library)
-   - Add export buttons to UI
-
-## Test Accounts
-
-No authentication system is implemented. Users are identified by a simple user ID string entered in the UI. Default user ID is "user1". To test with multiple users, simply change the user ID in the UI input field.
-
-## Local Setup Instructions
-
-1. Install Rust (if not already installed): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-2. Navigate to project directory: `cd docs-clone`
-3. Build the project: `cargo build`
-4. Run the backend: `cargo run` (starts at http://127.0.0.1:17777)
-5. Open frontend: Open `frontend/index.html` in a browser, or serve with `cd frontend && python3 -m http.server 3000`
-
-## Deployment
-
-No live deployment is included. The application is designed for local development and testing. For production deployment, the backend could be deployed as:
-- A container (Docker)
-- A compiled binary on a VPS
-- A serverless function (with modifications)
-
-The frontend could be deployed to:
-- Netlify/Vercel (static hosting)
-- CDN
-- Served alongside the backend
-
-## Notes for Reviewers
-
-- The backend runs on port 17777 by default
-- The frontend expects the backend at http://127.0.0.1:17777
-- SQLite database file (docs.db) is created automatically on first run
-- CORS is configured permissively for development
-- File upload is limited to .txt and .md files for security
-- Rich text editing uses the browser's contenteditable API (no external libraries)
+1. **Deploy** behind the existing reverse proxy with TLS and an authenticated MongoDB URL, then record the walkthrough video and assemble the Drive folder (~45 min).
+2. **Replace mocked auth with real sessions** — signed cookie, a `users` collection, login form, CSRF token. `resolve_access` already isolates the identity source, so this is contained (~1 h).
+3. **Optimistic-concurrency saves** — store a revision counter, reject a `PUT` whose base revision is stale, and surface “this document changed elsewhere” in the UI. Cheapest real fix for the last-write-wins gap (~40 min).
+4. **Share-link + role polish** — invite by link, `comment` role, and an owner-visible activity line (“shared with user2 · edit · 3 days ago”) (~40 min).
+5. **Integration tests against a throwaway MongoDB** covering the access matrix (owner/edit/view/stranger × read/write/delete/share) so the permission logic is regression-proof (~30 min).
