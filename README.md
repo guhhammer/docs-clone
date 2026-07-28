@@ -50,7 +50,7 @@ A lightweight collaborative document editor inspired by Google Docs, built with 
    ```bash
    cargo run
    ```
-   The server will start at `http://127.0.0.1:8080`
+   The server will start at `http://127.0.0.1:17777`
 
 5. **Open the frontend**
    Open `frontend/index.html` in your web browser, or serve it with a simple HTTP server:
@@ -63,7 +63,7 @@ A lightweight collaborative document editor inspired by Google Docs, built with 
 ## Environment Variables
 
 - `MONGODB_URL`: MongoDB connection string (default: `mongodb://localhost:27017`)
-- `BIND_ADDRESS`: Server bind address (default: `127.0.0.1:8080`)
+- `BIND_ADDRESS`: Server bind address (default: `127.0.0.1:17777`)
 - `RUST_LOG`: Logging level (default: `info`)
 
 ## API Endpoints

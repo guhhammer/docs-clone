@@ -26,7 +26,7 @@ async fn main() -> std::io::Result<()> {
     let tera = Tera::new("templates/**/*").unwrap();
 
     let bind_address = env::var("BIND_ADDRESS")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+        .unwrap_or_else(|_| "127.0.0.1:17777".to_string());
 
     println!("Server starting at http://{}", bind_address);
     println!("Connected to MongoDB at {}", mongo_url);

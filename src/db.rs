@@ -94,14 +94,15 @@ pub async fn update_document(
     }
     
     if let Some(c) = content {
-        eprintln!("Setting content to: {}", c);
         update_doc.insert("content", c);
     }
 
-    eprintln!("Update document: {:?}", update_doc);
     let update = doc! { "$set": update_doc };
     let result = collection.update_one(doc! { "_id": id }, update, None).await?;
-    eprintln!("Update result: matched={}, modified={}", result.matched_count, result.modified_count);
+
+    if result.matched_count == 0 {
+        return Ok(None);
+    }
 
     // Fetch and return the updated document
     get_document(db, id).await

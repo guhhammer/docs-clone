@@ -97,7 +97,7 @@ No authentication system is implemented. Users are identified by a simple user I
 1. Install Rust (if not already installed): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 2. Navigate to project directory: `cd docs-clone`
 3. Build the project: `cargo build`
-4. Run the backend: `cargo run` (starts at http://127.0.0.1:8080)
+4. Run the backend: `cargo run` (starts at http://127.0.0.1:17777)
 5. Open frontend: Open `frontend/index.html` in a browser, or serve with `cd frontend && python3 -m http.server 3000`
 
 ## Deployment
@@ -114,8 +114,8 @@ The frontend could be deployed to:
 
 ## Notes for Reviewers
 
-- The backend runs on port 8080 by default
-- The frontend expects the backend at http://127.0.0.1:8080
+- The backend runs on port 17777 by default
+- The frontend expects the backend at http://127.0.0.1:17777
 - SQLite database file (docs.db) is created automatically on first run
 - CORS is configured permissively for development
 - File upload is limited to .txt and .md files for security
