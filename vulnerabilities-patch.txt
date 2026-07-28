@@ -2,6 +2,7 @@ docs-clone - vulnerabilities patch
 =================================
 Companion to vulnerabilities.txt (the full hard-to-easy list of 16 findings).
 Repository: https://github.com/guhhammer/docs-clone
+Live demo:  https://docsclone.guhhammer.dev/
 
 Scope of this patch: findings 3, 4 and 5 only. All three are fixed, compiled and
 verified. Everything else in vulnerabilities.txt is still open and stays

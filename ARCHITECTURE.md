@@ -1,6 +1,7 @@
 # Architecture note
 
 Repository: https://github.com/guhhammer/docs-clone
+Live demo: https://docsclone.guhhammer.dev/
 
 ## What I prioritized and why
 

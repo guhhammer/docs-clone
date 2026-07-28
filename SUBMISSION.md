@@ -3,7 +3,7 @@
 **Project:** docs-clone — a lightweight collaborative document editor (Rust + Actix-web + MongoDB + vanilla JS)
 **Author:** guhhammer
 **GitHub:** https://github.com/guhhammer/docs-clone
-**Live URL:** _not deployed yet — see `LAST_THINGS_TODO.md`_
+**Live URL:** https://docsclone.guhhammer.dev/
 **Walkthrough video:** see `WALKTHROUGH_VIDEO.txt`
 **Google Drive folder:** _to be added when the folder is created — see `LAST_THINGS_TODO.md`_
 
@@ -55,7 +55,6 @@ Everything runs as **one process on port 17777** (API, UI and static assets).
 
 ## What is incomplete
 
-- **No live deployment yet.** The build is testable locally with `cargo run --release`; nothing is hosted at a public URL.
 - **No walkthrough video yet.** `WALKTHROUGH_VIDEO.txt` is a placeholder awaiting the link.
 - **No Google Drive folder assembled yet.**
 - **Auth is mocked.** `X-User-Id` is spoofable and is not a security boundary. Every access check is centralised, but there are no sessions, passwords or CSRF tokens.

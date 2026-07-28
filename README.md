@@ -3,6 +3,7 @@
 A lightweight collaborative document editor (Google Docs–inspired) built with **Rust + Actix-web** on the backend, **MongoDB** for persistence, and a dependency-free **vanilla JS** rich-text frontend.
 
 Repository: https://github.com/guhhammer/docs-clone
+Live demo: https://docsclone.guhhammer.dev/
 
 Everything (API, UI, static assets) is served by a single process on **port 17777**.
 
@@ -105,4 +106,6 @@ static/               app.js, styles.css
 
 ## Deployment
 
-Not deployed yet. The binary is self-contained (single port, static files served in-process); see [LAST_THINGS_TODO.md](LAST_THINGS_TODO.md) for the remaining submission steps, and [WALKTHROUGH_VIDEO.txt](WALKTHROUGH_VIDEO.txt) for the video link.
+Live demo: **<https://docsclone.guhhammer.dev/>** — reviewers can test there without any local setup.
+
+The binary is self-contained (single port, static files served in-process), so the deployment is the same build described above behind a TLS-terminating reverse proxy. See [LAST_THINGS_TODO.md](LAST_THINGS_TODO.md) for the remaining submission steps and [WALKTHROUGH_VIDEO.txt](WALKTHROUGH_VIDEO.txt) for the video link.

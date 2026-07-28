@@ -4,7 +4,7 @@ docs-clone — walkthrough video (3-5 minutes)
 WALKTHROUGH VIDEO URL: <paste the unlisted YouTube or Loom link here>
 
 Repository: https://github.com/guhhammer/docs-clone
-Live product URL: <paste the deployment URL here>
+Live product URL: https://docsclone.guhhammer.dev/
 
 --
 What the video covers (script outline):
@@ -24,3 +24,10 @@ What the video covers (script outline):
    saved byte, permissions enforced on the server and only reflected in the UI.
 7. How AI supported the workflow, and what AI output I rejected (see
    AI_WORKFLOW.md).
+
+
+
+I will make the repo private after a confirmation email of yours.       
+The video may remain a little longer until the revision step.
+
+Thanks for the time!
