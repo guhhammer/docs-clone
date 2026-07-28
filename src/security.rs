@@ -278,3 +278,223 @@ mod tests {
         assert!(sanitize_title(&"t".repeat(MAX_TITLE_CHARS + 1)).is_err());
     }
 }
+
+/// Policy tests.
+///
+/// These are deliberately written against the *configuration* in
+/// `compile_config`, not only against the sanitizer's current behaviour. The
+/// sanitizer is only as good as its allow-list, so widening that list - adding
+/// `style`, `srcdoc`, `target`, a `data:` scheme or a second embed provider -
+/// must fail the build rather than quietly reopening an XSS hole.
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    use crate::compile_config::{
+        HEADER_CSP, SANITIZER_ALLOWED_ATTRIBUTES, SANITIZER_ALLOWED_CLASSES,
+        SANITIZER_ALLOWED_IFRAME_HOSTS, SANITIZER_ALLOWED_TAGS, SANITIZER_ALLOWED_URL_SCHEMES,
+    };
+
+    /// Constructs that must never appear in stored content, whatever the input.
+    const FORBIDDEN_IN_OUTPUT: [&str; 21] = [
+        "<script",
+        "</script",
+        "<style",
+        "<object",
+        "<embed",
+        "<form",
+        "<base",
+        "<link",
+        "<meta",
+        "<svg",
+        "<math",
+        "<applet",
+        "<template",
+        "javascript:",
+        "vbscript:",
+        "data:text/html",
+        "srcdoc",
+        "formaction",
+        "onerror",
+        "onload",
+        "style=",
+    ];
+
+    /// Injection corpus. Every entry is sanitized and checked against
+    /// `FORBIDDEN_IN_OUTPUT`; several also assert a specific expected shape.
+    const CORPUS: [&str; 34] = [
+        r#"<script>alert(1)</script>"#,
+        r#"<SCRIPT SRC=//evil.test/x.js></SCRIPT>"#,
+        r#"<scr<script>ipt>alert(1)</script>"#,
+        r#"<p onclick="alert(1)">x</p>"#,
+        r#"<p onmouseover=alert(1)>x</p>"#,
+        r#"<div onfocus="alert(1)" autofocus>x</div>"#,
+        r#"<img src=x onerror=alert(1)>"#,
+        r#"<img src="javascript:alert(1)">"#,
+        r#"<a href="javascript:alert(1)">click</a>"#,
+        r#"<a href="JaVaScRiPt:alert(1)">click</a>"#,
+        r#"<a href="&#106;avascript:alert(1)">click</a>"#,
+        r#"<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>"#,
+        r#"<iframe src="https://evil.test/frame"></iframe>"#,
+        r#"<iframe src="//evil.test/frame"></iframe>"#,
+        r#"<iframe src="https://www.youtube-nocookie.com.evil.test/embed/x"></iframe>"#,
+        r#"<iframe src="https://evil.test/#www.youtube.com"></iframe>"#,
+        r#"<iframe srcdoc="<script>alert(1)</script>"></iframe>"#,
+        r#"<iframe src="javascript:alert(1)"></iframe>"#,
+        r#"<svg><script>alert(1)</script></svg>"#,
+        r#"<svg onload=alert(1)></svg>"#,
+        r#"<math><mtext><script>alert(1)</script></mtext></math>"#,
+        r#"<style>body{background:url('javascript:alert(1)')}</style>"#,
+        r#"<p style="background:url(javascript:alert(1))">x</p>"#,
+        r#"<div style="position:fixed;top:0;left:0;width:100vw;height:100vw">clickjack</div>"#,
+        r#"<object data="data:text/html,<script>alert(1)</script>"></object>"#,
+        r#"<embed src="https://evil.test/x.swf">"#,
+        r#"<form action="https://evil.test"><button formaction="https://evil.test">go</button></form>"#,
+        r#"<base href="https://evil.test/">"#,
+        r#"<link rel="stylesheet" href="https://evil.test/x.css">"#,
+        r#"<meta http-equiv="refresh" content="0;url=https://evil.test">"#,
+        r#"<body onload=alert(1)>x</body>"#,
+        r#"<template><script>alert(1)</script></template>"#,
+        r#"<p>legit <b>bold</b> and <i>italic</i></p><ul><li>one</li></ul>"#,
+        r#"<div class="embed"><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe></div>"#,
+    ];
+
+    #[test]
+    fn injection_corpus_produces_no_dangerous_output() {
+        for payload in CORPUS {
+            let clean = sanitize_content(payload).expect("sanitizer must not error");
+            let lowered = clean.to_ascii_lowercase();
+            for forbidden in FORBIDDEN_IN_OUTPUT {
+                assert!(
+                    !lowered.contains(forbidden),
+                    "payload {:?} produced {:?} which contains {:?}",
+                    payload,
+                    clean,
+                    forbidden
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_allow_listed_iframe_hosts_survive() {
+        for payload in CORPUS {
+            let clean = sanitize_content(payload).unwrap();
+            for fragment in clean.split("<iframe").skip(1) {
+                let src_start = fragment.find("src=\"").expect("iframe kept without src");
+                let rest = &fragment[src_start + 5..];
+                let src = &rest[..rest.find('"').unwrap()];
+                let host_ok = SANITIZER_ALLOWED_IFRAME_HOSTS
+                    .iter()
+                    .any(|host| src.starts_with(&format!("https://{}/", host)));
+                assert!(host_ok, "iframe survived with src {:?}", src);
+            }
+        }
+    }
+
+    #[test]
+    fn legitimate_formatting_and_youtube_embed_survive() {
+        let clean = sanitize_content(CORPUS[32]).unwrap();
+        assert!(clean.contains("<b>bold</b>") || clean.contains("<strong>bold</strong>"));
+        assert!(clean.contains("<li>one</li>"));
+
+        let clean = sanitize_content(CORPUS[33]).unwrap();
+        assert!(clean.contains("class=\"embed\""));
+        assert!(clean.contains("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"));
+    }
+
+    #[test]
+    fn allow_list_stays_narrow() {
+        for tag in SANITIZER_ALLOWED_TAGS {
+            assert!(
+                !matches!(
+                    tag,
+                    "script"
+                        | "style"
+                        | "object"
+                        | "embed"
+                        | "form"
+                        | "input"
+                        | "button"
+                        | "base"
+                        | "link"
+                        | "meta"
+                        | "svg"
+                        | "math"
+                        | "applet"
+                        | "template"
+                        | "body"
+                        | "a"
+                ),
+                "tag {:?} must not be allow-listed",
+                tag
+            );
+        }
+
+        for (tag, attributes) in SANITIZER_ALLOWED_ATTRIBUTES {
+            for attribute in attributes {
+                assert!(
+                    !attribute.starts_with("on"),
+                    "{}: event handler attribute {:?} must not be allow-listed",
+                    tag,
+                    attribute
+                );
+                assert!(
+                    !matches!(*attribute, "style" | "srcdoc" | "formaction" | "target" | "href"),
+                    "{}: attribute {:?} must not be allow-listed",
+                    tag,
+                    attribute
+                );
+            }
+        }
+
+        assert_eq!(
+            SANITIZER_ALLOWED_URL_SCHEMES,
+            ["https"],
+            "only https URLs may be stored: http, data and javascript stay out"
+        );
+
+        assert_eq!(
+            SANITIZER_ALLOWED_CLASSES.len(),
+            1,
+            "the class allow-list exists only for the responsive embed wrapper"
+        );
+
+        for host in SANITIZER_ALLOWED_IFRAME_HOSTS {
+            assert!(
+                host.ends_with("youtube.com") || host.ends_with("youtube-nocookie.com"),
+                "iframe host {:?} is not a YouTube embed host",
+                host
+            );
+            assert!(
+                !host.contains('*') && !host.contains('/'),
+                "iframe host {:?} must be a bare host name",
+                host
+            );
+        }
+    }
+
+    /// The sanitizer is defence in depth *with* the CSP, so the CSP must stay
+    /// strict and stay in sync with the iframe allow-list.
+    #[test]
+    fn csp_stays_strict_and_matches_the_iframe_allow_list() {
+        let csp = HEADER_CSP.1;
+        assert!(csp.contains("default-src 'self'"));
+        assert!(csp.contains("object-src 'none'"));
+        assert!(csp.contains("base-uri 'none'"));
+        assert!(csp.contains("frame-ancestors 'none'"));
+        assert!(csp.contains("form-action 'none'"));
+        assert!(csp.contains("script-src 'self'"));
+        assert!(!csp.contains("unsafe-inline"), "CSP must not allow inline code");
+        assert!(!csp.contains("unsafe-eval"), "CSP must not allow eval");
+        assert!(!csp.contains(" *"), "CSP must not use a wildcard source");
+        assert!(!csp.contains("http://"), "CSP must not allow plaintext sources");
+
+        for host in SANITIZER_ALLOWED_IFRAME_HOSTS {
+            assert!(
+                csp.contains(&format!("https://{}", host)),
+                "frame-src is missing the allow-listed embed host {:?}",
+                host
+            );
+        }
+    }
+}

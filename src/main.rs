@@ -34,6 +34,15 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to MongoDB");
 
+    // Sweep up share rows whose document is gone. Deletes are transactional when
+    // the deployment supports transactions; this covers the standalone fallback
+    // path being interrupted mid-delete in an earlier run.
+    match db::cleanup_orphan_shares(&db).await {
+        Ok(0) => {}
+        Ok(removed) => println!("Removed {} orphan share record(s)", removed),
+        Err(e) => eprintln!("Orphan share cleanup skipped: {}", e),
+    }
+
     let tera = Tera::new(TEMPLATES_GLOB).expect("Failed to load templates");
 
     // Bind host/port are compile-time constants; `BIND_ADDRESS` may override them

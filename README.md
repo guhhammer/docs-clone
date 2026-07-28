@@ -52,7 +52,7 @@ Health check: `curl http://127.0.0.1:17777/health` → `{"status":"ok"}`
 ## Tests
 
 ```bash
-cargo test          # 12 unit tests: sanitizer, validators, handler helpers
+cargo test          # 17 unit tests: sanitizer, injection corpus, policy/CSP guards, validators, handlers
 cargo check         # type check
 cargo audit         # dependency CVE scan (clean as of the last run)
 ```

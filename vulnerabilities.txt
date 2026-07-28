@@ -33,6 +33,6 @@ Easy
 
 15. Client-side error surface is thin. static/app.js shows generic status text; a failed autosave leaves the user with unsaved content and only a small status line plus the beforeunload guard. No retry/backoff, so a transient 429 from the rate limiter reads as a save failure.
 
-16. .env.example and .progression/FINAL-PROMPT-ANSWER.txt are untracked right now. Not a vulnerability, but review the example file before committing so no real value ends up in it.
 
 The single highest-leverage change remains #1 — until identity is authenticated, items 6, 7 and 13 cannot be enforced meaningfully, since every check keys off a user id the caller chooses.
+

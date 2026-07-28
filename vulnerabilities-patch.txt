@@ -1,0 +1,219 @@
+docs-clone - vulnerabilities patch
+=================================
+Companion to vulnerabilities.txt (the full hard-to-easy list of 16 findings).
+Repository: https://github.com/guhhammer/docs-clone
+
+Scope of this patch: findings 3, 4 and 5 only. All three are fixed, compiled and
+verified. Everything else in vulnerabilities.txt is still open and stays
+documented as open.
+
+
+WHY ONLY THESE THREE FOR THE DEMO
+---------------------------------
+The selection rule was: fix what can silently corrupt data or execute in a
+reviewer's browser, and do not touch anything that would change how the service
+is reached, authenticated or operated.
+
+  * They are the only findings that can cause harm during a normal demo
+    session. #3 destroys work with no error message the moment two tabs or two
+    users edit the same document - which is exactly what a reviewer does when
+    testing sharing. #4 leaves permanent inconsistent state in the database.
+    #5 is the one class of bug that would let content typed into the editor run
+    as code in the reviewer's browser.
+
+  * They are self-contained: three files (src/db.rs, src/handlers.rs,
+    static/app.js) plus tests. No new dependency, no new port, no new
+    environment variable, no schema migration, no change to the request path or
+    to the middleware stack. The service starts, binds and serves exactly as
+    before on port 17777.
+
+  * They cannot take the service down. Each change is additive and degrades
+    safely: an update without a revision still applies, a delete without
+    transaction support falls back to a safe ordering, and the sanitizer policy
+    tests only run under `cargo test`. Nothing in this patch can refuse to
+    start the server or reject a request that used to work.
+
+  * The findings that were NOT fixed all fail that last test. #1 (real
+    authentication) and #2 (CSRF) rewrite how every request is identified -
+    that is the correct fix, but landing it hours before a walkthrough would put
+    the demo and the deployment at risk for a problem the brief explicitly
+    allows to be mocked. #7/#8 (quotas, rate-limiter keying) touch admission
+    control, i.e. the exact code that can start rejecting legitimate traffic
+    behind a proxy. #10/#11/#12 (dependency churn, MongoDB credentials, TLS)
+    are deployment/hosting concerns that belong to the server configuration, not
+    the application build. Making them now would mean shipping an
+    unrehearsed operational change; they are listed instead, with the intended
+    fix, in vulnerabilities.txt and SUBMISSION.md.
+
+In short: these three protect the reviewer's data and browser without touching
+availability. The rest are honest, documented debt.
+
+
+3. LAST-WRITE-WINS ON CONCURRENT SAVES  ->  FIXED
+-------------------------------------------------
+Problem
+  `update_document` issued an unconditional `$set`. Two writers (two users on a
+  shared document, or two tabs of the same user) overwrote each other with no
+  error and no trace of the discarded version.
+
+Fix
+  Optimistic concurrency control with a revision counter.
+
+  * src/models.rs
+      - `Document.revision: u64` (serde default 0, so documents written before
+        this change still deserialize).
+      - `DocumentResponse.revision` so the client always knows its base version.
+      - `UpdateDocumentRequest.revision: Option<u64>`.
+  * src/db.rs
+      - `update_document(..., expected_revision: Option<u64>)` now adds
+        `revision` to the update *filter* and increments it in the same
+        statement: `{$set: {...}, $inc: {revision: 1}}`. One round trip, so two
+        writers based on the same revision can never both succeed.
+      - New `enum UpdateOutcome { Updated(Document), Conflict(Document), Missing }`.
+        `matched_count == 0` is disambiguated with a single re-read: document
+        still there -> Conflict, gone -> Missing.
+  * src/handlers.rs
+      - A conflict returns HTTP 409 with `{"code":"revision_conflict", ...,
+        "document": <current server version>}`, so the client can show the user
+        what is actually stored instead of guessing.
+  * static/app.js
+      - Every PUT carries `revision`.
+      - `api()` now attaches `status` and the parsed body to the thrown error.
+      - New `resolveConflict()`: on 409 the local version is first stashed in
+        `localStorage` under `docs-clone:conflict:<id>` (nothing is discarded
+        automatically), then the user chooses - type OVERWRITE to replace the
+        newer version (retried against the fresh revision), or cancel to load
+        the newer version. Status line shows "Conflict - not saved" and then
+        "Loaded the newer version".
+
+Backwards compatibility / availability
+  Sending no `revision` still performs an unconditional update, so existing
+  clients, curl calls and the upload path keep working. Nothing can start
+  failing because of this change.
+
+Verified (server running on 127.0.0.1:17777)
+  created rev: 1
+  writer A (revision 1)          -> 200, revision 2, content <p>A</p>
+  writer B (stale revision 1)    -> 409 revision_conflict, body carries the
+                                    server copy <p>A</p> at revision 2
+  writer B retry (revision 2)    -> 200, revision 3, content <p>B</p>
+  PUT with no revision           -> 200, revision 4  (legacy path intact)
+  Browser (headless Chromium): conflict dialog appears with the collaborator's
+  revision number, cancel loads their version and the local text survives in
+  localStorage, OVERWRITE re-saves against the fresh revision and the server
+  content matches the editor. Only console entries are the two expected 409
+  network log lines - no JS errors.
+
+
+4. DELETE IS NOT ATOMIC  ->  FIXED
+----------------------------------
+Problem
+  `delete_document` deleted the document and then the shares as two independent
+  operations. An interruption between them left share rows pointing at a
+  document id that no longer existed; those grants stayed in `shares` forever
+  and silently vanished from the grantee's list.
+
+Fix
+  * src/db.rs
+      - `delete_document` now runs both deletes inside a real MongoDB
+        transaction (`client.start_session()` -> `start_transaction()` ->
+        `.session(&mut session)` on both deletes -> `commit_transaction()`, with
+        `abort_transaction()` on any error).
+      - `is_transaction_unsupported()` detects the standalone-deployment error
+        ("Transaction numbers are only allowed on a replica set member or
+        mongos", IllegalOperation, etc.) and falls back to a sequential delete
+        that removes the **shares first**. An interruption then leaves a
+        document with no shares - harmless, still owned and visible - instead of
+        orphan share rows. The failure mode is inverted from "silent phantom
+        access" to "nothing happened".
+      - New `cleanup_orphan_shares()`: deletes every share whose `document_id`
+        is not in the live document set, and returns the count.
+  * src/main.rs
+      - `cleanup_orphan_shares` runs once at startup and logs the number
+        removed; a failure is logged and skipped, never fatal, so a cleanup
+        problem can never prevent the server from starting.
+
+Why both paths
+  Transactions need a replica set. The dev box and most cheap single-node
+  deployments run a standalone mongod, so a transaction-only fix would have
+  broken deletion in exactly the environment used for the demo. The fallback
+  plus the startup sweep gives the same end state on either deployment.
+
+Verified
+  Standalone mongod (the demo environment, transactions unavailable -> fallback
+  path):
+    shares before delete: 1
+    DELETE /api/documents/<id>   -> 204
+    shares after delete:  0      (no orphan, no error logged)
+  Orphan sweep: inserted a share pointing at a non-existent document id,
+  restarted the server ->
+    "Removed 1 orphan share record(s)"
+    orphan count after restart: 0
+
+
+5. HAND-WRITTEN SANITIZER ALLOW-LIST  ->  MITIGATED (as designed)
+-----------------------------------------------------------------
+Problem
+  `ammonia` is sound, but the security of the sanitizer is entirely a property
+  of *my* configuration in src/compile_config.rs. Nine hand-written unit tests
+  did not stop a future edit - adding `style`, `srcdoc`, `target`, a `data:`
+  scheme or a second embed provider - from quietly reopening stored XSS.
+
+Fix: tests that fail the build when the policy is widened
+  Added `mod policy_tests` in src/security.rs (5 new tests, 17 total):
+
+  * `injection_corpus_produces_no_dangerous_output`
+      34 payloads (script variants, nested `<scr<script>ipt>`, event handlers on
+      several tags, `javascript:` / entity-encoded `&#106;avascript:` /
+      `vbscript:` / `data:text/html;base64` URLs, non-YouTube iframes,
+      `youtube-nocookie.com.evil.test` host confusion, fragment tricks,
+      `iframe srcdoc`, `<svg onload>`, `<math><mtext>`, `<style>`, inline-style
+      clickjacking, `<object>`, `<embed>`, `<form>`+`formaction`, `<base>`,
+      `<link>`, `<meta http-equiv=refresh>`, `<body onload>`, `<template>`)
+      asserted against 21 forbidden output constructs.
+  * `only_allow_listed_iframe_hosts_survive`
+      Parses every surviving `<iframe src="...">` out of the corpus output and
+      asserts it starts with `https://<allow-listed host>/`. This tests the
+      outcome, not the `attribute_filter` implementation, so a future rewrite of
+      the host check is still covered.
+  * `legitimate_formatting_and_youtube_embed_survive`
+      Guards against over-blocking: bold/italic/lists and the responsive
+      `div.embed` + youtube-nocookie iframe must round-trip intact.
+  * `allow_list_stays_narrow`
+      Configuration invariants: no dangerous tag may enter
+      SANITIZER_ALLOWED_TAGS; no allow-listed attribute may start with `on-` or
+      be `style`/`srcdoc`/`formaction`/`target`/`href`;
+      SANITIZER_ALLOWED_URL_SCHEMES must be exactly `["https"]`; the class
+      allow-list stays at a single entry; every iframe host must be a bare
+      YouTube host with no wildcard and no path.
+  * `csp_stays_strict_and_matches_the_iframe_allow_list`
+      CSP must keep `default-src 'self'`, `object-src 'none'`,
+      `base-uri 'none'`, `frame-ancestors 'none'`, `form-action 'none'`,
+      `script-src 'self'`; must not contain `unsafe-inline`, `unsafe-eval`, a
+      wildcard source or `http://`; and `frame-src` must list every
+      allow-listed embed host - so the sanitizer and the CSP cannot drift apart.
+
+Not done, deliberately
+  No coverage-guided fuzzing (cargo-fuzz needs a nightly toolchain and a build
+  target that does not belong in this timebox). The corpus is a fixed regression
+  suite, not a fuzzer; that limitation is stated here rather than overclaimed.
+
+Verified
+  cargo test -> 17 passed, 0 failed.
+
+
+VERIFICATION SUMMARY FOR THIS PATCH
+-----------------------------------
+  cargo check   clean
+  cargo test    17 passed, 0 failed (was 12)
+  cargo audit   0 vulnerabilities, 2 allowed unmaintained warnings (unchanged)
+  runtime       server started on 127.0.0.1:17777; OCC 200/409/200 sequence,
+                legacy no-revision PUT, share-then-delete leaving 0 shares, and
+                orphan sweep on restart all confirmed
+  browser       headless Chromium walkthrough of both conflict branches, no JS
+                errors
+  cleanup       demo data removed from the docs_clone database, dev server stopped
+
+Untouched by design: authentication, CSRF, quotas, rate-limiter keying,
+dependency churn, MongoDB credentials and TLS - see vulnerabilities.txt items
+1, 2, 6-16.

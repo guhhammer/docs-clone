@@ -182,11 +182,15 @@ async function api(path, options = {}) {
 
     if (!response.ok) {
         let message = `Request failed (${response.status})`;
+        let body = null;
         try {
-            const body = await response.json();
+            body = await response.json();
             if (body && body.error) message = body.error;
         } catch (_) { /* keep default message */ }
-        throw new Error(message);
+        const error = new Error(message);
+        error.status = response.status;
+        error.body = body;
+        throw error;
     }
     return response.status === 204 ? null : response.json();
 }
@@ -302,6 +306,9 @@ async function saveDocument({ silent = true } = {}) {
     const payload = {
         title: el.docTitle.value,
         content: el.editor.innerHTML,
+        // Optimistic concurrency: the server rejects this write with 409 if the
+        // stored document moved on since it was opened or last saved.
+        revision: state.current.revision,
     };
 
     try {
@@ -321,11 +328,64 @@ async function saveDocument({ silent = true } = {}) {
         renderDocumentLists();
         setStatus('All changes saved', 'saved');
     } catch (error) {
+        if (error.status === 409 && error.body && error.body.document) {
+            state.saving = false;
+            await resolveConflict(error.body.document, payload);
+            return;
+        }
         setStatus('Unsaved changes', 'error');
         toast(`Could not save: ${error.message}`, 'error');
     } finally {
         state.saving = false;
     }
+}
+
+/// Someone else saved this document while it was open. Nothing is discarded
+/// automatically: the local version is stashed first, then the user chooses to
+/// overwrite the newer version or to load it.
+async function resolveConflict(serverDoc, localPayload) {
+    setStatus('Conflict - not saved', 'error');
+    stashConflictCopy(serverDoc.id, localPayload);
+
+    const answer = await promptDialog({
+        title: 'Someone else edited this document',
+        message: `${serverDoc.owner_id === currentUserId() ? 'Another session' : 'A collaborator'} `
+            + `saved a newer version (revision ${serverDoc.revision}). `
+            + 'Type OVERWRITE to replace it with your version, or cancel to load theirs. '
+            + 'Your text is kept in this browser either way.',
+        value: '',
+        confirmLabel: 'Continue',
+    });
+
+    if (answer !== null && answer.trim().toUpperCase() === 'OVERWRITE') {
+        state.current.revision = serverDoc.revision;
+        state.dirty = true;
+        await saveDocument({ silent: false });
+        return;
+    }
+
+    state.current = serverDoc;
+    state.dirty = false;
+    el.docTitle.value = serverDoc.title;
+    el.editor.innerHTML = serverDoc.content || '';
+    el.docMeta.textContent = `Edited ${formatDate(serverDoc.updated_at)}`;
+    applyAccessMode(serverDoc);
+    upsertLocalDocument(serverDoc);
+    renderDocumentLists();
+    updateWordCount();
+    setStatus('Loaded the newer version', 'saved');
+    toast('Loaded the newer version. Your unsaved text was kept in this browser.', 'info');
+}
+
+/// Keeps the rejected local version in this browser so a conflict can never
+/// destroy work outright.
+function stashConflictCopy(id, payload) {
+    try {
+        window.localStorage.setItem(
+            `docs-clone:conflict:${id}`,
+            JSON.stringify({ saved_at: new Date().toISOString(), payload }),
+        );
+    } catch (_) { /* storage unavailable: nothing else to do */ }
 }
 
 async function deleteCurrentDocument() {

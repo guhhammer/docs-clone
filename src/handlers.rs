@@ -253,21 +253,37 @@ pub async fn update_document(
         return bad_request("Nothing to update");
     }
 
-    match db::update_document(&db, &id, title, content).await {
-        Ok(Some(document)) => {
-            let count = if access.is_owner() {
-                db::get_shares_for_document(&db, &id)
-                    .await
-                    .map(|shares| shares.len())
-                    .unwrap_or(0)
-            } else {
-                0
-            };
+    let outcome = db::update_document(&db, &id, title, content, body.revision).await;
+
+    match outcome {
+        Ok(db::UpdateOutcome::Updated(document)) => {
+            let count = shared_with_count(&db, &id, access).await;
             HttpResponse::Ok().json(DocumentResponse::new(document, access, count))
         }
-        Ok(None) => not_found("Document not found"),
+        // Someone else saved while this client was editing. Return 409 together
+        // with the current server-side document so the UI can offer the user a
+        // choice instead of losing one of the two versions.
+        Ok(db::UpdateOutcome::Conflict(current)) => {
+            let count = shared_with_count(&db, &id, access).await;
+            HttpResponse::Conflict().json(serde_json::json!({
+                "error": "This document was changed by someone else since you opened it",
+                "code": "revision_conflict",
+                "document": DocumentResponse::new(current, access, count),
+            }))
+        }
+        Ok(db::UpdateOutcome::Missing) => not_found("Document not found"),
         Err(e) => internal_error("Error updating document", e),
     }
+}
+
+async fn shared_with_count(db: &db::Db, id: &str, access: Access) -> usize {
+    if !access.is_owner() {
+        return 0;
+    }
+    db::get_shares_for_document(db, id)
+        .await
+        .map(|shares| shares.len())
+        .unwrap_or(0)
 }
 
 /// Only the owner may delete a document.
@@ -569,12 +585,14 @@ mod tests {
             owner_id: "user1".to_string(),
             created_at: now,
             updated_at: now,
+            revision: 3,
         };
 
         let json = serde_json::to_value(DocumentResponse::new(document, Access::View, 0)).unwrap();
         assert_eq!(json["id"], "abc-123");
         assert_eq!(json["content"], "<p>hi</p>");
         assert_eq!(json["access"], "view");
+        assert_eq!(json["revision"], 3);
         assert!(json.get("_id").is_none());
     }
 

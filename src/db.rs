@@ -98,6 +98,7 @@ pub async fn create_document(
         owner_id,
         created_at: now,
         updated_at: now,
+        revision: 1,
     };
 
     db.documents().insert_one(&document).await?;
@@ -154,39 +155,148 @@ pub async fn get_document(db: &Db, id: &str) -> Result<Option<Document>, mongodb
     db.documents().find_one(doc! { "_id": id }).await
 }
 
+/// Result of a conditional update.
+pub enum UpdateOutcome {
+    /// The write applied; carries the stored document with its new revision.
+    Updated(Document),
+    /// Another writer got there first; carries the current server-side document
+    /// so the caller can show the user what is actually stored.
+    Conflict(Document),
+    /// The document no longer exists.
+    Missing,
+}
+
+/// Applies an edit with optimistic concurrency control.
+///
+/// When `expected_revision` is `Some`, the update filter also matches on the
+/// stored `revision`, so a save based on stale content cannot overwrite a newer
+/// one - it reports `Conflict` instead. `revision` is incremented atomically by
+/// the same update, in a single round trip, so two concurrent writers can never
+/// both succeed against the same base revision.
 pub async fn update_document(
     db: &Db,
     id: &str,
     title: Option<String>,
     content: Option<String>,
-) -> Result<Option<Document>, mongodb::error::Error> {
+    expected_revision: Option<u64>,
+) -> Result<UpdateOutcome, mongodb::error::Error> {
     let now_bson = BsonDateTime::from_system_time(Utc::now().into());
-    let mut update_doc = doc! { "updated_at": now_bson };
+    let mut set_doc = doc! { "updated_at": now_bson };
 
     if let Some(t) = title {
-        update_doc.insert("title", t);
+        set_doc.insert("title", t);
     }
     if let Some(c) = content {
-        update_doc.insert("content", c);
+        set_doc.insert("content", c);
+    }
+
+    let mut filter = doc! { "_id": id };
+    if let Some(revision) = expected_revision {
+        filter.insert("revision", revision as i64);
     }
 
     let result = db
         .documents()
-        .update_one(doc! { "_id": id }, doc! { "$set": update_doc })
+        .update_one(
+            filter,
+            doc! { "$set": set_doc, "$inc": { "revision": 1_i64 } },
+        )
         .await?;
 
     if result.matched_count == 0 {
-        return Ok(None);
+        // Either the document is gone, or its revision moved on: fetch it once
+        // to tell those two cases apart.
+        return match get_document(db, id).await? {
+            Some(current) => Ok(UpdateOutcome::Conflict(current)),
+            None => Ok(UpdateOutcome::Missing),
+        };
     }
 
-    get_document(db, id).await
+    match get_document(db, id).await? {
+        Some(document) => Ok(UpdateOutcome::Updated(document)),
+        None => Ok(UpdateOutcome::Missing),
+    }
 }
 
 /// Deletes a document and every share pointing at it.
+///
+/// Runs both deletes inside a single transaction when the deployment supports
+/// them (replica set / mongos). On a standalone server transactions are not
+/// available, so it falls back to deleting the shares *first*: an interruption
+/// then leaves a document with no shares (harmless, still owned and visible)
+/// rather than orphan share rows pointing at a document that no longer exists.
+/// `cleanup_orphan_shares` sweeps up anything an earlier crash left behind.
 pub async fn delete_document(db: &Db, id: &str) -> Result<bool, mongodb::error::Error> {
-    let result = db.documents().delete_one(doc! { "_id": id }).await?;
-    db.shares().delete_many(doc! { "document_id": id }).await?;
-    Ok(result.deleted_count > 0)
+    match delete_document_in_transaction(db, id).await {
+        Ok(deleted) => Ok(deleted),
+        Err(e) if is_transaction_unsupported(&e) => {
+            db.shares().delete_many(doc! { "document_id": id }).await?;
+            let result = db.documents().delete_one(doc! { "_id": id }).await?;
+            Ok(result.deleted_count > 0)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn delete_document_in_transaction(
+    db: &Db,
+    id: &str,
+) -> Result<bool, mongodb::error::Error> {
+    let mut session = db.client.start_session().await?;
+    session.start_transaction().await?;
+
+    let shares_result = db
+        .shares()
+        .delete_many(doc! { "document_id": id })
+        .session(&mut session)
+        .await;
+    if let Err(e) = shares_result {
+        let _ = session.abort_transaction().await;
+        return Err(e);
+    }
+
+    let document_result = db
+        .documents()
+        .delete_one(doc! { "_id": id })
+        .session(&mut session)
+        .await;
+    let deleted = match document_result {
+        Ok(result) => result.deleted_count > 0,
+        Err(e) => {
+            let _ = session.abort_transaction().await;
+            return Err(e);
+        }
+    };
+
+    session.commit_transaction().await?;
+    Ok(deleted)
+}
+
+/// True when the error is "this deployment has no transactions" rather than a
+/// real failure, so the caller can fall back to the sequential delete.
+fn is_transaction_unsupported(error: &mongodb::error::Error) -> bool {
+    let text = error.to_string();
+    text.contains("Transaction numbers are only allowed")
+        || text.contains("Transactions are not supported")
+        || text.contains("does not support transactions")
+        || text.contains("IllegalOperation")
+}
+
+/// Removes share rows whose document no longer exists. Called at startup so a
+/// crash between the two deletes of a previous run cannot leave a grantee with a
+/// share pointing at nothing. Returns the number of rows removed.
+pub async fn cleanup_orphan_shares(db: &Db) -> Result<u64, mongodb::error::Error> {
+    let mut cursor = db.documents().find(doc! {}).await?;
+    let mut live_ids: Vec<String> = Vec::new();
+    while let Some(document) = cursor.next().await {
+        live_ids.push(document?.id);
+    }
+
+    let result = db
+        .shares()
+        .delete_many(doc! { "document_id": { "$nin": live_ids } })
+        .await?;
+    Ok(result.deleted_count)
 }
 
 // ---------------------------------------------------------------------------

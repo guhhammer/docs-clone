@@ -15,6 +15,12 @@ pub struct Document {
     pub created_at: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
+    /// Monotonic write counter used for optimistic concurrency control. Every
+    /// accepted update increments it, and a client must send the revision it
+    /// based its edit on. Defaults to 0 for documents written before the field
+    /// existed.
+    #[serde(default)]
+    pub revision: u64,
 }
 
 /// Persisted share record: one row per (document, grantee) pair.
@@ -63,6 +69,7 @@ pub struct DocumentResponse {
     pub updated_at: DateTime<Utc>,
     pub access: String,
     pub shared_with_count: usize,
+    pub revision: u64,
 }
 
 impl DocumentResponse {
@@ -82,6 +89,7 @@ impl DocumentResponse {
             updated_at: doc.updated_at,
             access: access.to_string(),
             shared_with_count,
+            revision: doc.revision,
         }
     }
 }
@@ -116,6 +124,10 @@ pub struct CreateDocumentRequest {
 pub struct UpdateDocumentRequest {
     pub title: Option<String>,
     pub content: Option<String>,
+    /// Revision the client based this edit on. When present the write only
+    /// applies if the stored revision still matches, so a concurrent save is
+    /// reported as a conflict instead of silently overwriting the other side.
+    pub revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
