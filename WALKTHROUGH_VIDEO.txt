@@ -1,8 +1,7 @@
 docs-clone — walkthrough video (3-5 minutes)
 ===========================================
 
-WALKTHROUGH VIDEO URL: <paste the unlisted YouTube or Loom link here>
-
+WALKTHROUGH VIDEO URL: https://youtu.be/4dvJkvj8wq8
 Repository: https://github.com/guhhammer/docs-clone
 Live product URL: https://docsclone.guhhammer.dev/
 
