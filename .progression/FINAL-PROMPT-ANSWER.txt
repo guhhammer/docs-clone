@@ -1,0 +1,36 @@
+Derived from todo.txt. Everything below is a manual step that cannot be done from the code side. The code, tests and written notes are done (cargo check, cargo test → 12 passing, cargo audit → 0 vulnerabilities).
+
+Required by the brief
+ Deploy a live product URL reviewers can test. Single binary, one port (17777) — put it behind the existing reverse proxy with TLS and an authenticated MONGODB_URL. Then fill the URL into:
+SUBMISSION.md → Live URL
+README.md → Deployment
+WALKTHROUGH_VIDEO.txt → Live product URL
+ Record the 3–5 minute walkthrough video (unlisted YouTube or Loom). Script outline is already in WALKTHROUGH_VIDEO.txt; it must cover the main flow, what works end to end, what was deprioritized, key implementation decisions, and how AI supported the work.
+ Paste the video URL into WALKTHROUGH_VIDEO.txt (the field marked WALKTHROUGH VIDEO URL:).
+ Create the Google Drive folder and UI File Preview Created
+
+Ran cd /home/gustavo/Desktop/docs-clone && cargo test 2>&1 | grep -E "^test resul...
+
+
+Ran cd /home/gustavo/Desktop/docs-clone && git rm --cached links -q && printf '\n...
+
+All work is committed. Summary of this final pass:
+
+Security / vulnerability inspection
+
+cargo audit: found 4 advisories (idna 0.2.3 RUSTSEC-2024-0421, rustls-webpki 0.101.7 ×3) all coming from the MongoDB 2.x driver. Upgraded to mongodb 3.x (migrated db.rs to the new builder API) → cargo audit now reports 0 vulnerabilities (2 "unmaintained" warnings remain, transitive).
+Verified the upgraded driver end to end against the running server on 17777: create (script tag stripped), update, share view, shared-list for the grantee, delete → 204.
+Findings table (fixed + accepted residual risks) written into ARCHITECTURE.md.
+Anti-injection (already in place, documented): ammonia allow-list sanitizer on every saved title/content, YouTube-only iframes, no Command/shell/filesystem-write path anywhere, filenames used only for extension checks, validated user/document ids and permissions, typed doc! queries (no NoSQL operator injection), size caps + rate limiting, 9 security headers, generic error responses. src/compile_config.rs mirrors your links/ server configuration (bind host/port 17777, workers, timeouts, keep-alive, max connections, headers, rate limits, allow-lists).
+
+Rewritten submission files
+
+README.md — setup/run on 17777, features, .txt/.md upload limits, API table, mocked-user sharing walkthrough, GitHub link.
+ARCHITECTURE.md — priorities, tradeoffs table, request path, data model, security model, inspection findings.
+AI_WORKFLOW.md — tools, where AI helped, what I rejected (timestamps, _id DTO, client-only permissions, open CORS, duplicated frontend/), verification methods.
+SUBMISSION.md — exact contents list, credentials (user1/user2/user3), what works / incomplete / next 2–4 hours.
+LAST_THINGS_TODO.md — remaining manual steps.
+WALKTHROUGH_VIDEO.txt — placeholder for your YouTube/Loom link plus the recording outline.
+Verified now: cargo test → 12 passed, cargo check clean, /health OK. Test data cleared from MongoDB and the dev server stopped. links/ was only read, and is now gitignored (it was accidentally staged, then removed from the index before committing).
+
+Still yours to do: deploy the live URL, record the video and paste the link, create the Drive folder, add screenshots, and push to GitHub — no deployment exists yet.

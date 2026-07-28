@@ -1,0 +1,38 @@
+Ordered hardest to easiest (severity + effort to fix). All of these are real remaining gaps in the current tree — none is fixed.
+
+Hard
+1. Identity is spoofable — there is no authentication. src/handlers.rs trusts the X-User-Id header (falling back to ?user_id=). Anyone who can reach the port can read, edit or delete any document by claiming to be its owner. Every ownership and permission check downstream is therefore decorative. Fix = real sessions (signed cookie + users collection); resolve_access is the single choke point, but auth is still an hour-plus of work.
+
+2. No CSRF protection. Once real cookie auth exists, POST/PUT/DELETE on /api/documents… accept a plain JSON body with no token and no origin check. Today CORS is off and identity comes from a header, which accidentally shields it; the moment you add cookies it becomes exploitable. Fix must land with auth, not after.
+
+3. Last-write-wins on concurrent saves — silent data loss. update_document blindly $sets content. Two people (or two tabs) editing the same doc overwrite each other with no warning. Not a "vulnerability" in the CVE sense but it is the worst correctness flaw. Needs a revision counter + conditional update + a UI conflict path.
+
+4. Delete is not atomic. delete_document deletes the document, then the shares, in two separate operations with no transaction. A crash between them leaves orphan share rows pointing at a dead document id, which then show up in get_shared_documents lookups as silently missing entries. Needs a MongoDB transaction (requires a replica set) or a cleanup job.
+
+5. Sanitizer is an allow-list I wrote by hand, not a proven policy. ammonia is solid, but the residual risk is my configuration: SANITIZER_ALLOWED_IFRAME_HOSTS is checked on the src attribute in attribute_filter, and the whole scheme allow-list is ["https"]. Any future widening of that list (adding style, target, srcdoc, data:, or a second embed provider) reopens XSS. There is no fuzzing over the sanitizer, only 9 hand-written unit tests. Mitigate with a payload corpus test and a CSP that stays strict.
+
+Medium
+6. Shares can be granted to identities that do not exist. create_share validates the shape of user_id but never checks that the user is real. Typos silently create dead grants, and there is no way to list or audit who actually has access to what across the system. There is also no cap on the number of shares per document — a script can insert unbounded share rows for one doc.
+
+7. No per-user resource quotas. actix-governor limits by client IP (1 req/s, burst 60). A single user behind one IP can still create unlimited documents of 512 KiB each until the database fills. Nothing counts documents per owner.
+
+8. Rate limiter keys on the socket peer IP. Behind a reverse proxy every request looks like it comes from the proxy, so either the whole world shares one bucket (trivial DoS of all users) or, if you configure it to trust X-Forwarded-For, the header can be forged. Needs an explicit, trusted-proxy-aware extractor at deploy time.
+
+9. Upload path only validates extension and UTF-8. .txt/.md are checked by filename suffix, and the body must decode as UTF-8 — but the content is otherwise trusted as text and HTML-escaped. A file with a deceptive name (report.md containing anything) is accepted, and there is no MIME sniffing. Low real impact because the result is escaped before sanitizing, but it is a weak check.
+
+10. Two unmaintained transitive crates. cargo audit reports derivative 2.2.0 (RUSTSEC-2024-0388) and rustls-pemfile 1.0.4 (RUSTSEC-2025-0134) as unmaintained. No known exploit, but they will stop receiving fixes; both arrive through the dependency graph, not direct use.
+
+11. MongoDB has no credentials in the documented setup. .env ships mongodb://localhost:27017 with no user, no TLS, no auth. Fine on a loopback dev box; on a host with any other tenant or a bound-to-0.0.0.0 mongod it is a full database compromise that bypasses the app entirely.
+
+Easy
+12. HSTS is sent over plain HTTP. Strict-Transport-Security is emitted unconditionally, but the app binds 127.0.0.1:17777 with no TLS. The header does nothing locally and is misleading; TLS must be terminated by the proxy for it to mean anything.
+
+13. No structured audit log. Errors are logged via safe_for_log, but grants, revocations and deletions leave no trail. After an incident there is no way to reconstruct who shared what with whom.
+
+14. Document ids are UUIDv4 in the URL, and there is no expiry or revocation on anything but shares. Not guessable, but ids are permanent and appear in the address bar, so they leak through history, screenshots and referrers if a link is ever exposed cross-origin.
+
+15. Client-side error surface is thin. static/app.js shows generic status text; a failed autosave leaves the user with unsaved content and only a small status line plus the beforeunload guard. No retry/backoff, so a transient 429 from the rate limiter reads as a save failure.
+
+16. .env.example and .progression/FINAL-PROMPT-ANSWER.txt are untracked right now. Not a vulnerability, but review the example file before committing so no real value ends up in it.
+
+The single highest-leverage change remains #1 — until identity is authenticated, items 6, 7 and 13 cannot be enforced meaningfully, since every check keys off a user id the caller chooses.
