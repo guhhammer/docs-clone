@@ -1,0 +1,9 @@
+
+# Compiling
+/target
+Cargo.lock
+.env
+
+# DB
+migrations/**
+

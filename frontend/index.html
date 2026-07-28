@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docs Clone</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 Docs Clone</h1>
+            <div class="user-info">
+                <input type="text" id="userId" placeholder="Enter your user ID" value="user1">
+            </div>
+        </header>
+
+        <main>
+            <div class="sidebar">
+                <button id="newDocBtn" class="btn btn-primary">+ New Document</button>
+                <input type="file" id="fileUpload" accept=".txt,.md" style="display: none;">
+                <button id="uploadBtn" class="btn btn-secondary">📁 Upload File</button>
+                <div id="documentList" class="document-list">
+                    <!-- Documents will be loaded here -->
+                </div>
+            </div>
+
+            <div class="editor-container" id="editorContainer" style="display: none;">
+                <div class="editor-header">
+                    <input type="text" id="docTitle" class="doc-title" placeholder="Document Title">
+                    <div class="editor-actions">
+                        <button id="saveBtn" class="btn btn-success">Save</button>
+                        <button id="closeBtn" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <button class="toolbar-btn" data-command="bold" title="Bold"><b>B</b></button>
+                    <button class="toolbar-btn" data-command="italic" title="Italic"><i>I</i></button>
+                    <button class="toolbar-btn" data-command="underline" title="Underline"><u>U</u></button>
+                    <button class="toolbar-btn" data-command="insertUnorderedList" title="Bullet List">• List</button>
+                    <button class="toolbar-btn" data-command="formatBlock" data-value="h1" title="Heading 1">H1</button>
+                    <button class="toolbar-btn" data-command="formatBlock" data-value="h2" title="Heading 2">H2</button>
+                </div>
+                <div id="editor" class="editor" contenteditable="true"></div>
+            </div>
+
+            <div class="empty-state" id="emptyState">
+                <h2>Welcome to Docs Clone</h2>
+                <p>Create a new document or select one from the sidebar to get started.</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
