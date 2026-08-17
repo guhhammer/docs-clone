@@ -25,7 +25,7 @@ pub const STATIC_ROUTE: &str = "/static";
 /// Host/interface to bind the HTTP server on.
 pub const SERVER_BIND_HOST: &str = "127.0.0.1";
 /// Port to bind the HTTP server on. The whole app (API + UI) runs here.
-pub const SERVER_BIND_PORT: u16 = 17777;
+pub const SERVER_BIND_PORT: u16 = 15070;
 /// Number of Actix workers.
 pub const SERVER_WORKERS: usize = 2;
 /// Maximum concurrent connections (slowloris protection).
